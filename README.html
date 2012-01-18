@@ -1,0 +1,217 @@
+<!-- -*- mode: nxml; mode: visible; -*- -->
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+	<title>User-Mode Raw Disk Access</title>
+	<style language="style/css">
+	  body {
+		background-color:	#FCFCFC;
+		margin-left:		1cm;
+		margin-right:		1cm;
+	  }
+	  h1 {
+		font-family:		Verdana;
+		font-size:			24pt;
+		border-style:		double;
+		border-color:		black;
+		border-width:		medium;
+		padding:			25px;
+	  }
+	  h2 {
+		font-family:		Verdana;
+		font-size:			18pt;
+	  }
+	  h3 {
+		font-family:		Verdana;
+		font-size:			13pt;
+	  }
+	  code {
+		font-size:			13pt;
+		line-height:		130%;
+		text-align:			left;
+		font-family:		Consolas, Andale Mono, Courier New;
+	  }
+	  p, li, td {
+		font-size:			13pt;
+		line-height:		130%;
+		text-align:			justify;
+		font-family:		Georgia;
+	  }
+	</style>
+  </head>
+  <body>
+	<h1>User-mode Raw Disk Access</h1>
+	<p>
+	  This page describes <span style="font-variant: small-caps">DskACL</span>, a set of utilities to change access control for a disk drive, list disk information and lock a disk for exclusive access. It is provided free of charge, with no warranties! See LICENSE.txt for more information. No installation is required to run these utilities.
+	</p>
+	<p>
+	  The homepage of these programs where updates can be found is:
+	</p>
+	<blockquote>
+	  <p><a href="http://kaufmann.no/roland/dskacl/">http://kaufmann.no/roland/dskacl/</a></p>
+	</blockquote>
+	<a name="bg"/>
+	<h2>Background</h2>
+	<p>
+	  On Windows NT, only members of the Administrators group have access to perform direct disk I/O, without going through the filesystem. However, with the advent of virtual machines it may be desirable that such access should be allowed to certain disks also for regular accounts in order to run with only necessary permissions. Thus the need for a utility to control such access. Reasons for using direct disk access is that it facilitates dual-boot, improves performance of the guest machine and makes it easier to transfer files between systems. It will also offer a somewhat better recoverability in the case of a powerout.
+	</p>
+	<p>
+	  It should be noted that this utility only employs documented routines in the operating system and does not expose any security holes. It cannot be used to elevate a user beyond designated privileges. An Administrator account is needed to do the initial grant of access.
+	</p>
+	<h2>Setup that must be done once as Administrator</h2>
+	<a name="disk"/>
+	<h3>Retrieve the identifier for the disk</h3>
+	<p>
+	  Run the <span style="font-variant: small-caps">ShowDsks</span> utility in disk mode:
+	</p>
+	<blockquote>
+	  <code>
+		cscript /nologo showdsks.vbs -d
+	  </code>
+	</blockquote>
+	<p>
+	  The first column output of this command is the disk number; you can use this to create the Win32-reachable path <code>\\.\PHYSICALDRIVE<i>&laquo;x&raquo;</i></code>. Once this number is assigned by the operating system it will not change as long as the disk is attached, but it may change the next time the disk is attached subject to which other disks that have been attached in the meantime.
+	</p>
+	<p>
+	  In the second column, a device identifier will be returned. It has the form <code>USBSTOR\DISK&amp;VEN_<i>&laquo;vendor&raquo;</i>&amp;PROD_<i>&laquo;product&raquo;</i>&amp;REV_<i>&laquo;revision&raquo;</i>\<i>&laquo;serial&raquo;</i>&amp;0</code>. (The serial number seems to be a hexadecimal encoding of the serial using a 16-bit little endian format, i.e. every pair of bytes should be swapped before converting it to ASCII). Use this information to verify that you indeed are looking at the correct disk.
+	  Note that some inexpensive USB devices may not have a serial number. In that case, the Plug'n'Play Manager will invent one for the duration of the attachment only; on subsequent attachments in may differ.
+	</p>
+	<p>
+	  If a string is given after the <code>-d</code> argument, only the disks that have a device ID with this prefix will be listed. This can be used to for instance limit the search to all USB devices.
+	</p>
+	<a name="rights"/>
+	<h3>Check which rights are granted to the drive</h3>
+	<p>
+	  Run the <span style="font-variant: small-caps">SubInAcl</span> utility from the Support Tools to see which accesses that has already been granted for the drive. The default is that only System and the builtin Administrator account can write to the disk.
+	</p>
+	<blockquote>
+	  <code>
+		subinacl /noverbose /file \\.\physicaldrive<i>&laquo;x&raquo;</i> /display=sddl
+	  </code>
+	</blockquote>
+	<p>
+	  where <i>&laquo;x&raquo;</i> is the disk number that you <a href="#disk">retrieved earlier</a> with <span style="font-variant: small-caps">ShowDsks</span>.
+	  (If you are running Windows XP, you'll need an updated version of <span style="font-variant: small-caps">SubInAcl</span> for this to work correctly. The link to the updated version can be found in the <a href="#ref">References</a> section).
+	</p>
+	<!--
+	<h3>Temporarily grant new rights</h3>
+	<blockquote>
+	  <code>
+		subinacl /file \\.\physicaldrive<i>&laquo;x&raquo;</i> /grant=<i>&laquo;username&raquo;</i>=RW
+	  </code>
+	</blockquote>
+	-->
+	<a name="change"/>
+	<h3>Changing the access control list of the drive</h3>
+	<p>
+	  You can change the access for the drive using the <span style="font-variant: small-caps">SubInAcl</span> utility but it will only last until the device is detached, and you'll have to be an Administrator every time you do so. This is because it alters the live, volatile kernel object.
+	</p>
+	<p>
+	  In order to make the change durable, we'll have to write it to the security descriptor in the Registry which is read when the disk is attached and the corresponding kernel object created. It is located in the key <code>HKLM\SYSTEM\CurrentControlSet\Enum\<i>&laquo;device-ID&raquo;</i>\Security</code>, but this key is protected and hidden from view, even for the System account! However, there is an API to change it, and the <span style="font-variant: small-caps">DskACL</span> utility is a command-line front-end for this API. You can invoke the utility like this:
+	</p>
+	<blockquote>
+	  <code>
+		dskacl -i "<i>&laquo;device-ID&raquo;</i>" -r
+	  </code>
+	</blockquote>
+	<p>
+	  where the <i>&laquo;device-ID&raquo;</i> can be found with the <a href="#disk"><span style="font-variant: small-caps">ShowDsks</span> utility</a>. Note the use of quotation marks around the device identifier to escape the use of ampersands in it that would otherwise be interpreted by the command line shell.
+	</p>
+	<p>
+	  By default, it grants (in addition to System and Administrators) read and write access to the drive for members of the Power Users group. If you want a different setup, you'll have to compose the SDDL string that should be applied and submit that to the utility as well (using the <code>-s</code> option). Check the <a href="#ref">reference section</a> for articles that describes this syntax.
+	</p>
+	<p>
+	  Also note the <code>-r</code> argument at the end; it causes the device to be reattached so that the new access rights comes into effect immediately; the access rights are only read for the drive when it is connected so you would otherwise have to detach and reattach it again. Needless to say, this is a bad idea if you have any files open on the drive at the time. The new rights can be verified using the <span style="font-variant: small-caps">SubInAcl</span> utility as <a href="#rights">show previously</a>.
+	</p>
+	<h2>Actions to do as a regular user</h2>
+	<a name="virtual"/>
+	<h3>Create a virtual disk</h3>
+	<p>
+	  You'll have to create a "virtual" disk that refers to the physical disk:
+	</p>
+	<blockquote>
+	  <code>
+		VBoxManage -nologo internalcommands createrawvmdk -filename <i>&laquo;path-to.vmdk&raquo;</i> -rawdisk \\.\physicaldrive<i>&laquo;x&raquo;</i>
+	  </code>
+	</blockquote>
+	<p>
+	  This disk can then be attached to a virtual machine like any other virtual disks. Any I/O from the guest will be forwarded to the physical drive.
+	</p>
+	<p>
+	  There is also the possibility of creating a virtual disk which can only refer to some partitions on the disk, and which redirects the master boot record. This feature is useful if you want to boot from another partition on the same disk as the host operating system. I won't recommend it if you have a rotational disk since head movement cannot be optimized, but sometimes you have no choice.
+	</p>
+	<a name="verify"/>
+	<h3>Verify that the drive is in the same slot</h3>
+	<p>
+	  Note that the virtual disk refers to the numerical index given to the disk and recall that this index will change if the order of attachment changes. Thus, it would be good practice to verify that the disk currently attached at a certain index match the supposed identifier before doing raw access to it. This can be done by running the <span style="font-variant: small-caps">ShowDsks</span> utility in "partition" mode:
+	</p>
+	<blockquote>
+	  <code>
+		cscript /nologo showdsks.vbs -p "<i>&laquo;device-ID&raquo;</i>"  <i>&laquo;partition-number&raquo;</i>
+	  </code>
+	</blockquote>
+	<p>
+	  Output from this command will be information about the partitions found on the disk that has the given device identifier, any recognized file systems on those partitions, drive letter that has been assigned and the volume serial number. You can match this output against the prerequisites and stop before booting the guest if there is a discrepancy. 
+	</p>
+	<a name="lock"/>
+	<h3>Lock any mounted file systems</h3>
+	<p>
+	  If you use a file system in the guest that is also recognized by the host (i.e. FAT or NTFS), the volume should be locked and dismounted to avoid two operating systems writing to the same on-disk structures without any coordination. The <span style="font-variant: small-caps">Xclusive</span> utility will keep the drive locked while executing another command and unlock it afterward:
+	</p>
+	<blockquote>
+	  <code>
+		xclusive \\.\<i>&laquo;drive&raquo;</i>: wscript launchvm.vbs <i>&laquo;virtual-machine-name&raquo;</i>
+	  </code>
+	</blockquote>
+	<p>
+	  This utility exists both in a console variant (<code>.com</code>) and a GUI variant (<code>.exe</code>). The <span style="font-variant: small-caps">LaunchVM</span> is a helper script that starts the guest machine in VirtualBox and wait until the guest is stopped before it is run. In that way, only one system has full control of the drive at any time. (Before I discovered the automation API of VirtualBox I wrote an alternative script for this called <span style="font-variant: small-caps">StartVM</span> which does the same thing but only with command-line tools).
+	</p>
+	<p>
+	  Note that it is a <em>volume</em> that is locked, not the disk, since we want the file system to release its handle of the disk. That is why a drive letter and not a disk index is used to lock it. If you need to lock more than one partition, then these commands must be nested. When the volume is eventually unlocked, the file system driver on the host will remount it, updated with the changes done by the guest machine.
+	</p>
+	<a name="notes"/>
+	<h2>Disks, partitions and volumes</h2>
+	<p>
+	  You may wonder if it is possible to grant access to just one partition and not the entire disk: Unfortunately, it is not. The reason is twofold: First, Windows store security information for devices, not partitions in the Registry. When a device is attached, it is inspected and from that point forward the kernel objects that addresses the partitions (<code>\Device\Harddisk<i>&laquo;x&raquo;</i>\Partition<i>&laquo;y&raquo;</i></code>) are created. Second, there is no easy way to address a partition in user-mode. User-mode only has the concept of volumes, which refers to the filesystems within those partitions. Hence, virtualization solutions rather address the entire disk and read the partition table themselves.
+	</p>
+	<p>
+	  You can of course create a virtual disk that only refers to certain partitions so that the guest machine can only see those, but the user which runs the virtual machine will need full read access to the complete disk on the host and this may be a security issue.
+	</p>
+	<a name="about"/>
+	<h2>Colophon</h2>
+	<p>
+	  These utilities have been compiled using the Windows Driver Development Kit (DDK) and the Support Tools that accompanies the operating system. They have been tested on Windows XP Service Pack 3. No disks were hurt in the production of these utilities. The source code is written in C and VBScript, using NMake to control dependencies.
+	</p>
+	<p>
+	  Use the bundled <code>build.cmd</code> script to drive the build process. If given the argument <code>clean</code> it will clear the build artifacts. Without any arguments, it will rebuild all outdated outputs.
+	</p>
+	<p>
+	  The author can be reached at <a href="javascript:void(0)" onclick="var a='rlndkfmn';var b='dskacl';var c='gmail'; var d='com';window.location='mail'+'to'+String.fromCharCode(58)+a+String.fromCharCode(43)+b+String.fromCharCode(64)+c+String.fromCharCode(46)+d">rlndkfmn<span style="display:none"></span>&#x2B;<span style="display:none"></span>dskacl<span style="display:none"></span>&#x40;<span style="display:none"></span>gmail<span style="display:none"></span>&#x2E;<span style="display:none"></span>com</a>. Note however that unsolicited requests for usage support will not be answered, nor will any help be provided for recovering from unintended consequences (such as overwriting your own disk)!
+	</p>
+	<a name="ref"/>
+	<h2>References</h2>
+	<blockquote>
+	  <p><a href="http://stackoverflow.com/a/3100268/373074">StackOverflow post in which Oleg Kiriljuk shows how to enumerate devices</a></p>
+	</blockquote>
+	<blockquote>
+	  <p><a href="http://download.microsoft.com/download/1/7/d/17d82b72-bc6a-4dc8-bfaa-98b37b22b367/subinacl.msi">Updated <span style="font-variant: small-caps">SubInAcl</span> utility</a></p>
+	</blockquote>
+	<blockquote>
+	  <p><a href="http://www.osronline.com/article.cfm?article=100">OSR: Inside Driver &amp; Device Security</a></p>
+	</blockquote>
+	<blockquote>
+	  <p><a href="http://www.netid.washington.edu/documentation/domains/sddl.aspx">Understanding SDDL syntax</a></p>
+	</blockquote>
+	<blockquote>
+	  <p><a href="http://reboot.pro/12413/"><span style="font-variant: small-caps">LockDismount</span> utility by TheK</a></p>
+	</blockquote>
+	<blockquote>
+	  <p><a href="http://download.microsoft.com/download/d/3/8/d38066aa-4e37-4ae8-bce3-a4ce662b2024/WindowsXP-KB838079-SupportTools-ENU.exe">Windows XP Service Pack 2 Support Tools</a></p>
+	</blockquote>
+	<blockquote>
+	  <p><a href="http://download.microsoft.com/download/9/0/f/90f019ac-8243-48d3-91cf-81fc4093ecfd/1830_usa_ddk.iso">DDK for Windows Server 2003 Service Pack 1, Build 3790.1830</a></p>
+	</blockquote>
+	<p>
+	  Microsoft Windows&trade;, Windows NT&trade; and Windows XP&trade; are trademarks of Microsoft Corp., VirtualBox&trade; is a trademark of Oracle Corp.
+	</p>
+  </body>
+</html>

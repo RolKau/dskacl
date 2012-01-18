@@ -1,0 +1,9 @@
+# editor backup files
+*~
+
+# compiler output
+i386
+amd64
+
+# packaging
+*.cab
