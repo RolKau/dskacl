@@ -69,10 +69,10 @@
 	  </code>
 	</blockquote>
 	<p>
-	  The first column output of this command is the disk number; you can use this to create the Win32-reachable path <code>\\.\PHYSICALDRIVE<i>&laquo;x&raquo;</i></code>. Once this number is assigned by the operating system it will not change as long as the disk is attached, but it may change the next time the disk is attached subject to which other disks that have been attached in the meantime.
+	  The first column output of this command is the <i>disk number</i>; you can use this to create the Win32-reachable path <code>\\.\PHYSICALDRIVE<i>&laquo;x&raquo;</i></code>. Once this number is assigned by the operating system it will not change as long as the disk is attached, but it may change the next time the disk is attached subject to which other disks that have been attached in the meantime.
 	</p>
 	<p>
-	  In the second column, a device identifier will be returned. It has the form <code>USBSTOR\DISK&amp;VEN_<i>&laquo;vendor&raquo;</i>&amp;PROD_<i>&laquo;product&raquo;</i>&amp;REV_<i>&laquo;revision&raquo;</i>\<i>&laquo;serial&raquo;</i>&amp;0</code>. (The serial number seems to be a hexadecimal encoding of the serial using a 16-bit little endian format, i.e. every pair of bytes should be swapped before converting it to ASCII). Use this information to verify that you indeed are looking at the correct disk.
+	  In the second column, a <i>device identifier</i> will be returned. It has the form <code>USBSTOR\DISK&amp;VEN_<i>&laquo;vendor&raquo;</i>&amp;PROD_<i>&laquo;product&raquo;</i>&amp;REV_<i>&laquo;revision&raquo;</i>\<i>&laquo;serial&raquo;</i>&amp;0</code>. (The serial number seems to be a hexadecimal encoding of the serial using a 16-bit little endian format, i.e. every pair of bytes should be swapped before converting it to ASCII). Use this information to verify that you indeed are looking at the correct disk.
 	  Note that some inexpensive USB devices may not have a serial number. In that case, the Plug'n'Play Manager will invent one for the duration of the attachment only; on subsequent attachments in may differ.
 	</p>
 	<p>
@@ -89,7 +89,7 @@
 	  </code>
 	</blockquote>
 	<p>
-	  where <i>&laquo;x&raquo;</i> is the disk number that you <a href="#disk">retrieved earlier</a> with <span style="font-variant: small-caps">ShowDsks</span>.
+	  where <i>&laquo;x&raquo;</i> is the disk number that you <a href="#disk">retrieved earlier</a> from the second column of the output of <span style="font-variant: small-caps">ShowDsks</span>.
 	  (If you are running Windows XP, you'll need an updated version of <span style="font-variant: small-caps">SubInAcl</span> for this to work correctly. The link to the updated version can be found in the <a href="#ref">References</a> section).
 	</p>
 	<!--
